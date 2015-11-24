@@ -16,11 +16,15 @@ import org.apache.http.util.EntityUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.htmlcleaner.HtmlCleaner;
+import org.htmlcleaner.PrettyXmlSerializer;
 import org.htmlcleaner.TagNode;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 @Component
-public class FlightsExtractorService {
+public class FlightsExtractorService
+{
 
 	private static final String WWW_XCONTEST_ORG = "http://www.xcontest.org";
 
@@ -31,73 +35,92 @@ public class FlightsExtractorService {
 
 	private RequestConfig requestConfig;
 
-	public FlightsExtractorService() {
-		
-        HttpHost proxy = new HttpHost("proxy.corproot.net", 8079, "http");
+	@Autowired
+	private Environment environment;
 
-        requestConfig = RequestConfig.custom()
-                .setProxy(proxy)
-                .build();
-		
-		httpclient = HttpClients.custom().setRedirectStrategy(new LaxRedirectStrategy())
-				.setDefaultCookieStore(new BasicCookieStore()).build();
+	public FlightsExtractorService()
+	{
+
+		HttpHost proxy = new HttpHost("proxy.corproot.net", 8079, "http");
+
+		requestConfig = RequestConfig.custom().setProxy(proxy).build();
+
+		httpclient = HttpClients.custom().setRedirectStrategy(new LaxRedirectStrategy()).setDefaultCookieStore(new BasicCookieStore()).build();
 
 		cleaner = new HtmlCleaner();
 	}
 
-	public List<Flight> getFlights(String username, String password) {
+	public List<Flight> getFlights(String username, String password)
+	{
 
 		getRootPage();
 
 		doLogin(username, password);
 
 		List<String> flightsPerYearPaths = getFlightsPerYearPaths();
+		List<String> flightsUrls = new ArrayList<String>();
+		List<Flight> flights = new ArrayList<Flight>();
 
-		for (String flightsPerYearPath : flightsPerYearPaths) {
-			getFlightUrlsPerYear(flightsPerYearPath);
+		for (String flightsPerYearPath : flightsPerYearPaths)
+		{
+			flightsUrls.addAll(getFlightUrlsPerYear(flightsPerYearPath));
 		}
 
-		return null;
+		for (String flightUrl : flightsUrls)
+		{
+			flights.add(getFlight(flightUrl));
+		}
+
+		return flights;
 	}
 
-	private void getRootPage() {
+	private void getRootPage()
+	{
 
 		HttpUriRequest getRootPage = RequestBuilder.get(WWW_XCONTEST_ORG).setConfig(requestConfig).build();
-		try (CloseableHttpResponse response = httpclient.execute(getRootPage)) {
+		try (CloseableHttpResponse response = httpclient.execute(getRootPage))
+		{
 
 			HttpEntity entity = response.getEntity();
 
 			LOG.debug("getRootPage: " + response.getStatusLine().getStatusCode());
 			EntityUtils.consume(entity);
 
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			LOG.error("Problem getting getRootPage", e);
 		}
 	}
 
-	private void doLogin(String username, String password) {
+	private void doLogin(String username, String password)
+	{
 
-		HttpUriRequest login = RequestBuilder.post(WWW_XCONTEST_ORG + "/world/en/").setConfig(requestConfig)
-				.addParameter("login[username]", username).addParameter("login[password]", password).build();
+		HttpUriRequest login = RequestBuilder.post(WWW_XCONTEST_ORG + "/world/en/").setConfig(requestConfig).addParameter("login[username]", username).addParameter("login[password]", password).build();
 
-		try (CloseableHttpResponse response = httpclient.execute(login)) {
+		try (CloseableHttpResponse response = httpclient.execute(login))
+		{
 			HttpEntity entity = response.getEntity();
 
 			LOG.debug("login: " + response.getStatusLine().getStatusCode());
 			EntityUtils.consume(entity);
 
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			LOG.error("Problem while login", e);
 		}
 	}
 
-	private List<String> getFlightsPerYearPaths() {
+	private List<String> getFlightsPerYearPaths()
+	{
 
 		List<String> urlPaths = new ArrayList<String>();
 
 		HttpUriRequest getFlightPerYearPaths = RequestBuilder.get(WWW_XCONTEST_ORG + "/world/en/my-flights/").setConfig(requestConfig).build();
 
-		try (CloseableHttpResponse response = httpclient.execute(getFlightPerYearPaths)) {
+		try (CloseableHttpResponse response = httpclient.execute(getFlightPerYearPaths))
+		{
 
 			HttpEntity entity = response.getEntity();
 
@@ -109,26 +132,33 @@ public class FlightsExtractorService {
 
 			LOG.debug("Number of Contest Years");
 
-			for (Object option : myFlightsOptions) {
+			for (Object option : myFlightsOptions)
+			{
 				String optionValue = ((TagNode) option).getAttributeByName("value");
+				if (isTestEnvironment() && !optionValue.contains("2013"))
+					continue;
 				LOG.debug("Year: " + optionValue);
 				urlPaths.add(optionValue);
 			}
 
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			LOG.error("Problem getting getFlightPerYearPaths", e);
 		}
 
 		return urlPaths;
 	}
 
-	private List<String> getFlightUrlsPerYear(String flightsPerYearPath) {
+	private List<String> getFlightUrlsPerYear(String flightsPerYearPath)
+	{
 
 		List<String> flightUrlsPerYear = new ArrayList<String>();
 
 		HttpUriRequest getFlightsPerYear = RequestBuilder.get(WWW_XCONTEST_ORG + flightsPerYearPath).setConfig(requestConfig).build();
 
-		try (CloseableHttpResponse response = httpclient.execute(getFlightsPerYear)) {
+		try (CloseableHttpResponse response = httpclient.execute(getFlightsPerYear))
+		{
 
 			HttpEntity entity = response.getEntity();
 
@@ -140,22 +170,56 @@ public class FlightsExtractorService {
 
 			LOG.debug("Number of Flights in " + flightsPerYearPath + " : " + flightsPerYear.length);
 
-			for (Object flight : flightsPerYear) {
+			for (Object flight : flightsPerYear)
+			{
 				LOG.debug(flight.toString());
 				flightUrlsPerYear.add(flight.toString());
 			}
 
-		} catch (Exception e) {
+		}
+		catch (Exception e)
+		{
 			LOG.error("Problem getting getFlightPerYearPaths", e);
 		}
 
 		return flightUrlsPerYear;
 	}
 
-//	public static void main(String[] args) {
-//		
-//		FlightsExtractor extractor = new FlightsExtractor("horstnaujoks", "nivea1");
-//		extractor.getFlights();
-//	}
+	private Flight getFlight(String flightUrl)
+	{
+		HttpUriRequest getFlight = RequestBuilder.get(WWW_XCONTEST_ORG + flightUrl).setConfig(requestConfig).build();
+
+		Flight flight = null;
+
+		try (CloseableHttpResponse response = httpclient.execute(getFlight))
+		{
+
+			HttpEntity entity = response.getEntity();
+
+			LOG.debug("getFlight: " + response.getStatusLine().getStatusCode());
+
+			TagNode rootNode = cleaner.clean(entity.getContent());
+
+			PrettyXmlSerializer serializer = new PrettyXmlSerializer(cleaner.getProperties());
+
+			System.out.println(serializer.getAsString(rootNode));
+
+			Object o = rootNode.evaluateXPath("//table[@class='XCinfo']")[0];
+			flight = new Flight();
+			flight.setXcontextUrl(flightUrl);
+
+		}
+		catch (Exception e)
+		{
+			LOG.error("Problem getting getFlight", e);
+		}
+
+		return flight;
+	}
+
+	private boolean isTestEnvironment()
+	{
+		return environment.acceptsProfiles("test");
+	}
 
 }

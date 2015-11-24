@@ -1,5 +1,9 @@
 package xcontest;
 
+import static org.junit.Assert.*;
+
+import java.util.List;
+import naujoks.xcontest.Flight;
 import naujoks.xcontest.FlightsExtractorApplication;
 import naujoks.xcontest.FlightsExtractorService;
 import org.junit.Test;
@@ -18,7 +22,8 @@ public class FlightsExtractorServiceTest
 	@Test
 	public void testGetFlights()
 	{
-		flightsExtractorService.getFlights("horstnaujoks", "nivea1");
+		List<Flight> flights = flightsExtractorService.getFlights("horstnaujoks", "nivea1");
+		assertEquals(2, flights.size());
 	}
 
 }
