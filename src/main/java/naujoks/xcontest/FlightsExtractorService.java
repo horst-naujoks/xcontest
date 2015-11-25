@@ -1,224 +1,242 @@
 package naujoks.xcontest;
 
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpHost;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.methods.RequestBuilder;
-import org.apache.http.impl.client.BasicCookieStore;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.client.LaxRedirectStrategy;
-import org.apache.http.util.EntityUtils;
+import java.util.Map;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.htmlcleaner.HtmlCleaner;
-import org.htmlcleaner.PrettyXmlSerializer;
-import org.htmlcleaner.TagNode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
+import com.gargoylesoftware.htmlunit.IncorrectnessListener;
+import com.gargoylesoftware.htmlunit.InteractivePage;
+import com.gargoylesoftware.htmlunit.ScriptException;
+import com.gargoylesoftware.htmlunit.WebClient;
+import com.gargoylesoftware.htmlunit.html.DomAttr;
+import com.gargoylesoftware.htmlunit.html.HtmlAnchor;
+import com.gargoylesoftware.htmlunit.html.HtmlEmphasis;
+import com.gargoylesoftware.htmlunit.html.HtmlForm;
+import com.gargoylesoftware.htmlunit.html.HtmlOption;
+import com.gargoylesoftware.htmlunit.html.HtmlPage;
+import com.gargoylesoftware.htmlunit.html.HtmlSpan;
+import com.gargoylesoftware.htmlunit.html.HtmlSubmitInput;
+import com.gargoylesoftware.htmlunit.html.HtmlTable;
+import com.gargoylesoftware.htmlunit.html.HtmlTableCell;
+import com.gargoylesoftware.htmlunit.html.HtmlTableHeaderCell;
+import com.gargoylesoftware.htmlunit.html.HtmlTableRow;
+import com.gargoylesoftware.htmlunit.javascript.JavaScriptErrorListener;
+
 @Component
-public class FlightsExtractorService
-{
+public class FlightsExtractorService {
 
 	private static final String WWW_XCONTEST_ORG = "http://www.xcontest.org";
 
+	private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.uuuu HH:mm");
+	
 	private static Logger LOG = LogManager.getLogger(FlightsExtractorService.class);
 
-	private CloseableHttpClient httpclient;
-	private HtmlCleaner cleaner;
-
-	private RequestConfig requestConfig;
+	private WebClient webClient;
 
 	@Autowired
 	private Environment environment;
 
-	public FlightsExtractorService()
-	{
+	public FlightsExtractorService() {
+		webClient = new WebClient();
+		webClient.getOptions().setCssEnabled(false);
+		webClient.getOptions().setThrowExceptionOnScriptError(false);
+		webClient.setIncorrectnessListener(new IncorrectnessListener() {
 
-		HttpHost proxy = new HttpHost("proxy.corproot.net", 8079, "http");
+			@Override
+			public void notify(String message, Object origin) {
 
-		requestConfig = RequestConfig.custom().setProxy(proxy).build();
+			}
+		});
 
-		httpclient = HttpClients.custom().setRedirectStrategy(new LaxRedirectStrategy()).setDefaultCookieStore(new BasicCookieStore()).build();
+		webClient.setJavaScriptErrorListener(new JavaScriptErrorListener() {
 
-		cleaner = new HtmlCleaner();
+			@Override
+			public void timeoutError(InteractivePage page, long allowedTime, long executionTime) {
+			}
+
+			@Override
+			public void scriptException(InteractivePage page, ScriptException scriptException) {
+			}
+
+			@Override
+			public void malformedScriptURL(InteractivePage page, String url, MalformedURLException malformedURLException) {
+			}
+
+			@Override
+			public void loadScriptError(InteractivePage page, URL scriptUrl, Exception exception) {
+			}
+		});
 	}
 
-	public List<Flight> getFlights(String username, String password)
-	{
+	public List<Flight> getFlights(String username, String password) {
 
-		getRootPage();
+		HtmlPage rootPage = getRootPage();
 
-		doLogin(username, password);
+		doLogin(rootPage, username, password);
 
 		List<String> flightsPerYearPaths = getFlightsPerYearPaths();
 		List<String> flightsUrls = new ArrayList<String>();
 		List<Flight> flights = new ArrayList<Flight>();
 
-		for (String flightsPerYearPath : flightsPerYearPaths)
-		{
+		for (String flightsPerYearPath : flightsPerYearPaths) {
 			flightsUrls.addAll(getFlightUrlsPerYear(flightsPerYearPath));
 		}
 
-		for (String flightUrl : flightsUrls)
-		{
+		for (String flightUrl : flightsUrls) {
 			flights.add(getFlight(flightUrl));
 		}
 
 		return flights;
 	}
 
-	private void getRootPage()
-	{
+	private HtmlPage getRootPage() {
 
-		HttpUriRequest getRootPage = RequestBuilder.get(WWW_XCONTEST_ORG).setConfig(requestConfig).build();
-		try (CloseableHttpResponse response = httpclient.execute(getRootPage))
-		{
-
-			HttpEntity entity = response.getEntity();
-
-			LOG.debug("getRootPage: " + response.getStatusLine().getStatusCode());
-			EntityUtils.consume(entity);
-
-		}
-		catch (Exception e)
-		{
-			LOG.error("Problem getting getRootPage", e);
+		try {
+			return webClient.getPage(WWW_XCONTEST_ORG);
+		} catch (Exception e) {
+			LOG.error("Error while loading: " + WWW_XCONTEST_ORG, e);
+			return null;
 		}
 	}
 
-	private void doLogin(String username, String password)
-	{
+	private void doLogin(HtmlPage rootPage, String username, String password) {
 
-		HttpUriRequest login = RequestBuilder.post(WWW_XCONTEST_ORG + "/world/en/").setConfig(requestConfig).addParameter("login[username]", username).addParameter("login[password]", password).build();
+		HtmlForm loginForm = rootPage.getForms().get(0);
+		loginForm.getInputByName("login[username]").setValueAttribute(username);
+		loginForm.getInputByName("login[password]").setValueAttribute(password);
 
-		try (CloseableHttpResponse response = httpclient.execute(login))
-		{
-			HttpEntity entity = response.getEntity();
-
-			LOG.debug("login: " + response.getStatusLine().getStatusCode());
-			EntityUtils.consume(entity);
-
-		}
-		catch (Exception e)
-		{
-			LOG.error("Problem while login", e);
+		HtmlSubmitInput submitButton = (HtmlSubmitInput) loginForm.getInputByValue("::LogIN::");
+		try {
+			submitButton.click();
+		} catch (IOException e) {
+			LOG.error("Error while login", e);
 		}
 	}
 
-	private List<String> getFlightsPerYearPaths()
-	{
+	private List<String> getFlightsPerYearPaths() {
 
 		List<String> urlPaths = new ArrayList<String>();
-
-		HttpUriRequest getFlightPerYearPaths = RequestBuilder.get(WWW_XCONTEST_ORG + "/world/en/my-flights/").setConfig(requestConfig).build();
-
-		try (CloseableHttpResponse response = httpclient.execute(getFlightPerYearPaths))
-		{
-
-			HttpEntity entity = response.getEntity();
-
-			LOG.debug("getFlightPerYearPaths: " + response.getStatusLine().getStatusCode());
-
-			TagNode rootNode = cleaner.clean(entity.getContent());
-
-			Object[] myFlightsOptions = rootNode.evaluateXPath("//select/*");
-
-			LOG.debug("Number of Contest Years");
-
-			for (Object option : myFlightsOptions)
-			{
-				String optionValue = ((TagNode) option).getAttributeByName("value");
-				if (isTestEnvironment() && !optionValue.contains("2013"))
-					continue;
-				LOG.debug("Year: " + optionValue);
-				urlPaths.add(optionValue);
-			}
-
+		HtmlPage page = null;
+		try {
+			page = webClient.getPage(WWW_XCONTEST_ORG + "/world/en/my-flights/");
+		} catch (Exception e) {
+			LOG.error("Error while loading: " + WWW_XCONTEST_ORG + "/world/en/my-flights/", e);
+			return null;
 		}
-		catch (Exception e)
-		{
-			LOG.error("Problem getting getFlightPerYearPaths", e);
+
+		@SuppressWarnings("unchecked")
+		List<HtmlOption> myFlightsOptions = (List<HtmlOption>) page.getByXPath("//select/*");
+
+		for (HtmlOption option : myFlightsOptions) {
+			String optionValue = option.getAttribute("value");
+			if (isTestEnvironment() && !optionValue.contains("2013"))
+				continue;
+			LOG.debug("Year: " + optionValue);
+			urlPaths.add(optionValue);
 		}
 
 		return urlPaths;
+
 	}
 
-	private List<String> getFlightUrlsPerYear(String flightsPerYearPath)
-	{
+	private List<String> getFlightUrlsPerYear(String flightsPerYearPath) {
 
 		List<String> flightUrlsPerYear = new ArrayList<String>();
 
-		HttpUriRequest getFlightsPerYear = RequestBuilder.get(WWW_XCONTEST_ORG + flightsPerYearPath).setConfig(requestConfig).build();
-
-		try (CloseableHttpResponse response = httpclient.execute(getFlightsPerYear))
-		{
-
-			HttpEntity entity = response.getEntity();
-
-			LOG.debug("getFlightsPerYear: " + response.getStatusLine().getStatusCode());
-
-			TagNode rootNode = cleaner.clean(entity.getContent());
-
-			Object[] flightsPerYear = rootNode.evaluateXPath("//tbody/tr/td/div/a[@class='detail']/@href");
-
-			LOG.debug("Number of Flights in " + flightsPerYearPath + " : " + flightsPerYear.length);
-
-			for (Object flight : flightsPerYear)
-			{
-				LOG.debug(flight.toString());
-				flightUrlsPerYear.add(flight.toString());
-			}
-
+		HtmlPage page = null;
+		try {
+			page = webClient.getPage(WWW_XCONTEST_ORG + flightsPerYearPath);
+		} catch (Exception e) {
+			LOG.error("Error while loading: " + WWW_XCONTEST_ORG + flightsPerYearPath, e);
+			return null;
 		}
-		catch (Exception e)
-		{
-			LOG.error("Problem getting getFlightPerYearPaths", e);
+
+		@SuppressWarnings("unchecked")
+		List<DomAttr> flightsPerYear = (List<DomAttr>) page.getByXPath("//tbody/tr/td/div/a[@class='detail']/@href");
+
+		LOG.debug("Number of Flights in " + flightsPerYearPath + " : " + flightsPerYear.size());
+
+		for (DomAttr flight : flightsPerYear) {
+			LOG.debug(flight.getValue());
+			flightUrlsPerYear.add(flight.getValue());
 		}
 
 		return flightUrlsPerYear;
+
 	}
 
-	private Flight getFlight(String flightUrl)
-	{
-		HttpUriRequest getFlight = RequestBuilder.get(WWW_XCONTEST_ORG + flightUrl).setConfig(requestConfig).build();
+	private Flight getFlight(String flightUrl) {
+
+		HtmlPage page = null;
+		try {
+			page = webClient.getPage(WWW_XCONTEST_ORG + flightUrl);
+			Thread.sleep(2000);
+
+		} catch (Exception e) {
+			LOG.error("Error while loading: " + WWW_XCONTEST_ORG + flightUrl, e);
+			return null;
+		}
 
 		Flight flight = null;
 
-		try (CloseableHttpResponse response = httpclient.execute(getFlight))
-		{
+		HtmlTable table = (HtmlTable) page.getByXPath("//table[@class='XCinfo']").get(0);
+		Map<String, List<HtmlTableCell>> baseInfo = getBaseInfo(table);
 
-			HttpEntity entity = response.getEntity();
+		flight = new Flight();
+		flight.setXcontextUrl(flightUrl);
 
-			LOG.debug("getFlight: " + response.getStatusLine().getStatusCode());
+		HtmlTableCell launchDate = baseInfo.get("date").get(1);
+		String date = ((HtmlAnchor) launchDate.getChildNodes().get(0)).getChildNodes().get(0).getTextContent();
+		String time = ((HtmlEmphasis) launchDate.getChildNodes().get(2)).getChildNodes().get(0).getTextContent();
 
-			TagNode rootNode = cleaner.clean(entity.getContent());
+		flight.setLaunchDate(LocalDateTime.parse(date + " " + time, DATE_TIME_FORMATTER));
 
-			PrettyXmlSerializer serializer = new PrettyXmlSerializer(cleaner.getProperties());
+		HtmlTableCell launch = baseInfo.get("launch").get(1);
 
-			System.out.println(serializer.getAsString(rootNode));
-
-			Object o = rootNode.evaluateXPath("//table[@class='XCinfo']")[0];
-			flight = new Flight();
-			flight.setXcontextUrl(flightUrl);
-
-		}
-		catch (Exception e)
-		{
-			LOG.error("Problem getting getFlight", e);
-		}
+		flight.setLaunchLocation(((HtmlAnchor) launch.getChildNodes().get(2)).getAttribute("title").split(":")[1].trim());
+		flight.setLaunchCountry(((HtmlSpan) ((HtmlAnchor) launch.getChildNodes().get(0)).getChildNodes().get(0)).getTextContent());
 
 		return flight;
 	}
 
-	private boolean isTestEnvironment()
-	{
+	private Map<String, List<HtmlTableCell>> getBaseInfo(HtmlTable table) {
+		Map<String, List<HtmlTableCell>> data = new HashMap<String, List<HtmlTableCell>>();
+
+		List<HtmlTableRow> rows = table.getRows();
+		for (HtmlTableRow row : rows) {
+			List<HtmlTableCell> cells = row.getCells();
+			String key = null;
+			for (HtmlTableCell cell : cells) {
+				if (cell instanceof HtmlTableHeaderCell) {
+					key = key(cell);
+					data.put(key, new ArrayList<HtmlTableCell>());
+				}
+				data.get(key).add(cell);
+			}
+		}
+		return data;
+	}
+
+	private String key(HtmlTableCell cell) {
+		String text = cell.asText();
+		if (text.contains(":"))
+			return text.split(":")[0].trim();
+		return cell.getAttribute("class");
+	}
+
+	private boolean isTestEnvironment() {
 		return environment.acceptsProfiles("test");
 	}
 

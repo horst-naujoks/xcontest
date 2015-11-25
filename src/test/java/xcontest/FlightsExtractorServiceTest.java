@@ -24,6 +24,12 @@ public class FlightsExtractorServiceTest
 	{
 		List<Flight> flights = flightsExtractorService.getFlights("horstnaujoks", "nivea1");
 		assertEquals(2, flights.size());
+		
+		Flight flight = flights.get(0);
+		assertEquals("2013-06-07", flight.getLaunchDate().toLocalDate().toString());
+		assertEquals("10:46", flight.getLaunchDate().toLocalTime().toString());
+		assertEquals("CH", flight.getLaunchCountry());
+		assertEquals("Niederwiler Stierenberg", flight.getLaunchLocation());
 	}
 
 }
