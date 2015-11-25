@@ -40,68 +40,38 @@ public class FlightsExtractorService {
 	private static final String WWW_XCONTEST_ORG = "http://www.xcontest.org";
 
 	private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.uuuu HH:mm");
-	
-	private static Logger LOG = LogManager.getLogger(FlightsExtractorService.class);
 
-	private WebClient webClient;
+	private static Logger LOG = LogManager.getLogger(FlightsExtractorService.class);
 
 	@Autowired
 	private Environment environment;
 
-	public FlightsExtractorService() {
-		webClient = new WebClient();
-		webClient.getOptions().setCssEnabled(false);
-		webClient.getOptions().setThrowExceptionOnScriptError(false);
-		webClient.setIncorrectnessListener(new IncorrectnessListener() {
-
-			@Override
-			public void notify(String message, Object origin) {
-
-			}
-		});
-
-		webClient.setJavaScriptErrorListener(new JavaScriptErrorListener() {
-
-			@Override
-			public void timeoutError(InteractivePage page, long allowedTime, long executionTime) {
-			}
-
-			@Override
-			public void scriptException(InteractivePage page, ScriptException scriptException) {
-			}
-
-			@Override
-			public void malformedScriptURL(InteractivePage page, String url, MalformedURLException malformedURLException) {
-			}
-
-			@Override
-			public void loadScriptError(InteractivePage page, URL scriptUrl, Exception exception) {
-			}
-		});
-	}
-
 	public List<Flight> getFlights(String username, String password) {
 
-		HtmlPage rootPage = getRootPage();
+		WebClient webClient = new WebClient();
+		webClient.getOptions().setCssEnabled(false);
+		webClient.getOptions().setThrowExceptionOnScriptError(false);
+
+		HtmlPage rootPage = getRootPage(webClient);
 
 		doLogin(rootPage, username, password);
 
-		List<String> flightsPerYearPaths = getFlightsPerYearPaths();
+		List<String> flightsPerYearPaths = getFlightsPerYearPaths(webClient);
 		List<String> flightsUrls = new ArrayList<String>();
 		List<Flight> flights = new ArrayList<Flight>();
 
 		for (String flightsPerYearPath : flightsPerYearPaths) {
-			flightsUrls.addAll(getFlightUrlsPerYear(flightsPerYearPath));
+			flightsUrls.addAll(getFlightUrlsPerYear(webClient, flightsPerYearPath));
 		}
 
 		for (String flightUrl : flightsUrls) {
-			flights.add(getFlight(flightUrl));
+			flights.add(getFlight(webClient, flightUrl));
 		}
 
 		return flights;
 	}
 
-	private HtmlPage getRootPage() {
+	private HtmlPage getRootPage(WebClient webClient) {
 
 		try {
 			return webClient.getPage(WWW_XCONTEST_ORG);
@@ -125,7 +95,7 @@ public class FlightsExtractorService {
 		}
 	}
 
-	private List<String> getFlightsPerYearPaths() {
+	private List<String> getFlightsPerYearPaths(WebClient webClient) {
 
 		List<String> urlPaths = new ArrayList<String>();
 		HtmlPage page = null;
@@ -141,7 +111,7 @@ public class FlightsExtractorService {
 
 		for (HtmlOption option : myFlightsOptions) {
 			String optionValue = option.getAttribute("value");
-			if (isTestEnvironment() && !optionValue.contains("2013"))
+			if (/* isTestEnvironment() */true && !optionValue.contains("2013"))
 				continue;
 			LOG.debug("Year: " + optionValue);
 			urlPaths.add(optionValue);
@@ -151,7 +121,7 @@ public class FlightsExtractorService {
 
 	}
 
-	private List<String> getFlightUrlsPerYear(String flightsPerYearPath) {
+	private List<String> getFlightUrlsPerYear(WebClient webClient, String flightsPerYearPath) {
 
 		List<String> flightUrlsPerYear = new ArrayList<String>();
 
@@ -177,7 +147,7 @@ public class FlightsExtractorService {
 
 	}
 
-	private Flight getFlight(String flightUrl) {
+	private Flight getFlight(WebClient webClient, String flightUrl) {
 
 		HtmlPage page = null;
 		try {
@@ -230,6 +200,7 @@ public class FlightsExtractorService {
 	}
 
 	private String key(HtmlTableCell cell) {
+
 		String text = cell.asText();
 		if (text.contains(":"))
 			return text.split(":")[0].trim();
