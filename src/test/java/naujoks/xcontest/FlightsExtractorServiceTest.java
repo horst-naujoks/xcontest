@@ -1,11 +1,7 @@
-package xcontest;
+package naujoks.xcontest;
 
-import static org.junit.Assert.*;
-
+import static org.junit.Assert.assertEquals;
 import java.util.List;
-import naujoks.xcontest.Flight;
-import naujoks.xcontest.FlightsExtractorApplication;
-import naujoks.xcontest.FlightsExtractorService;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,12 +20,12 @@ public class FlightsExtractorServiceTest
 	{
 		List<Flight> flights = flightsExtractorService.getFlights("horstnaujoks", "nivea1");
 		assertEquals(2, flights.size());
-		
+
 		Flight flight = flights.get(0);
 		assertEquals("2013-06-07", flight.getLaunchDate().toLocalDate().toString());
-		assertEquals("10:46", flight.getLaunchDate().toLocalTime().toString());
+		assertEquals("10:46:00.000", flight.getLaunchDate().toLocalTime().toString());
+		assertEquals("10:46:00.000", flight.getTrackDuration());
 		assertEquals("CH", flight.getLaunchCountry());
 		assertEquals("Niederwiler Stierenberg", flight.getLaunchLocation());
 	}
-
 }
