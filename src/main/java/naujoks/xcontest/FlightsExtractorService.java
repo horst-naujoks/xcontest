@@ -196,8 +196,8 @@ public class FlightsExtractorService
 
 		HtmlTableCell launch = baseInfo.get("launch").get(1);
 
-		flight.setLaunchLocation(((HtmlAnchor)launch.getFirstChild().getNextSibling().getNextSibling().getNextSibling()).getAttribute("title").split(":")[1].trim());
-		flight.setLaunchCountry(((HtmlAnchor)launch.getFirstChild().getNextSibling()).getFirstChild().getFirstChild().getTextContent());
+		flight.setLaunchLocation(((HtmlAnchor) launch.getFirstChild().getNextSibling().getNextSibling().getNextSibling()).getAttribute("title").split(":")[1].trim());
+		flight.setLaunchCountry(((HtmlAnchor) launch.getFirstChild().getNextSibling()).getFirstChild().getFirstChild().getTextContent());
 
 		flight.setGlider(baseInfo.get("glider").get(1).getAttribute("title"));
 
@@ -213,12 +213,11 @@ public class FlightsExtractorService
 		flight.setAverageSpeed(Float.parseFloat((flightDuration.get(2).getFirstChild().getNextSibling().getTextContent())));
 
 		flight.setIgcFileUrl(((HtmlAnchor) baseInfo.get("igc").get(0).getFirstChild().getNextSibling().getNextSibling()).getAttribute("href"));
-		
+
 		table = (HtmlTable) page.getByXPath("//div[@class='innerDoc']/table[@class='XCinfo']").get(0);
 		Map<String, List<HtmlTableCell>> additionalBaseInfo = getBaseInfo(table);
-		
-	//	HtmlTableCell maxClimb = additionalBaseInfo.get("max. altitude").get(1).getTextContent();
-		
+
+		flight.setMaxHeight(Integer.parseInt(additionalBaseInfo.get("max. altitude").get(1).getTextContent().replaceAll("[^-?.0-9]+", "")));
 
 		return flight;
 	}
